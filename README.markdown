@@ -1,7 +1,7 @@
 # Austral Docker Image Optimizer
 
 [![License](https://img.shields.io/github/license/austral-project/docker-image-optimizer)](https://img.shields.io/github/license/austral-project/docker-image-optimizer)
-[![Docker Image Version (tag latest semver)](https://img.shields.io/docker/v/australproject/image-optimizer/0.7)](https://img.shields.io/docker/v/australproject/image-optimizer/0.7)
+[![Docker Image Version (tag latest semver)](https://img.shields.io/docker/v/australproject/image-optimizer/squoosh)](https://img.shields.io/docker/v/australproject/image-optimizer/squoosh)
 [![Docker Automated build](https://img.shields.io/docker/automated/australproject/image-optimizer)](https://img.shields.io/docker/automated/australproject/image-optimizer)
 [![Docker Cloud Build Status](https://img.shields.io/docker/cloud/build/australproject/image-optimizer)](https://img.shields.io/docker/cloud/build/australproject/image-optimizer)
 [![Docker Image Size (latest semver)](https://img.shields.io/docker/image-size/australproject/image-optimizer)](https://img.shields.io/docker/image-size/australproject/image-optimizer)
