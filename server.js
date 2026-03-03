@@ -1,71 +1,69 @@
-/*
- * This file is part of the Austral Docker Squoosh package.
- *
- * (c) Austral <support@austral.dev>
- *
- * For the full copyright and license information, please view the LICENSE
- * file that was distributed with this source code.
- */
-
 import express from "express";
 import { exec } from "child_process";
 import path from "path";
 import fs from "fs/promises";
+import { EventEmitter } from "events";
 
+EventEmitter.defaultMaxListeners = 100;
 const app = express();
 const port = 3000;
-
-const UPLOAD_DIR = "/home/www-data/public/uploads";
-const THUMB_DIR = "/home/www-data/public/thumbnails";
 
 app.use(express.json());
 
 app.post("/optimize", async (req, res) => {
   try {
-    const { filename, format, options = {} } = req.body;
+    const { filename, formats = [], options = {}, outputDir } = req.body;
 
-    if (!filename || !format) {
-      return res.status(400).json({ error: "filename and format required" });
+    if (!filename || !formats.length || !outputDir) {
+      return res.status(400).json({ error: "filename, formats and outputDir are required" });
     }
+    await fs.mkdir(outputDir, { recursive: true });
 
-    const inputPath = path.join(UPLOAD_DIR, filename);
+    res.json({ accepted: true });
 
-    let ext = format === "mozjpeg" ? "jpg" : format === "oxipng" ? "png" : format;
-    const outputPath = path.join(THUMB_DIR, `${path.parse(filename).name}.${ext}`);
 
-    // 🔎 cache disque simple
-    try {
-      await fs.access(outputPath);
-      return res.json({ success: true, cached: true, output: path.basename(outputPath) });
-    } catch (_) {}
-
-    // Construire les options CLI
-    let cliOptions = "{}";
-    if (format === "webp" && options.webp?.quality) {
-      cliOptions = `--webp '{"quality":${options.webp.quality}}'`;
-    } else if (format === "mozjpeg" && options.mozjpeg?.quality) {
-      cliOptions = `--mozjpeg '{"quality":${options.mozjpeg.quality}}'`;
-    } else if (format === "oxipng" && options.oxipng?.level !== undefined) {
-      cliOptions = `--oxipng '{"level":${options.oxipng.level}}'`;
-    }
-
-    const command = `npx --yes squoosh-cli ${cliOptions} -d ${THUMB_DIR} ${inputPath}`;
-
-    exec(command, (err, stdout, stderr) => {
-      if (err) {
-        console.error(stderr);
-        return res.status(500).json({ error: "Optimization failed" });
+    setImmediate(() => {
+      let cliOptions = "";
+      if (formats.includes("webp")) {
+        const quality = options.webp?.quality ?? 75;
+        cliOptions += ` --webp '{"quality":${quality}}'`;
       }
 
-      res.json({ success: true, cached: false, output: path.basename(outputPath) });
-    });
+      if (formats.includes("mozjpeg")) {
+        const quality = options.mozjpeg?.quality ?? 75;
+        cliOptions += ` --mozjpeg '{"quality":${quality}}'`;
+      }
 
+      if (formats.includes("oxipng")) {
+        const level = options.oxipng?.level ?? 1;
+        cliOptions += ` --oxipng '{"level":${level}}'`;
+      }
+
+      const command = `
+        node --no-experimental-fetch=false \
+/home/www-data/node_modules/@squoosh/cli/src/index.js \
+${cliOptions} \
+-d ${outputDir} \
+${filename}
+      `;
+
+      console.log("Commande Squoosh:", command);
+      exec(command, (err, stdout, stderr) => {
+        if (err) {
+          console.error("Erreur Squoosh async:", stderr);
+          return;
+        }
+        console.log("Compression terminée:", filename);
+      });
+
+
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Erreur serveur:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
 app.listen(port, () => {
-  console.log("Squoosh CLI service running on port 3000");
+  console.log(`Squoosh CLI service running on port ${port}`);
 });
