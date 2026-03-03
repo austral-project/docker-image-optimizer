@@ -1,69 +1,73 @@
 import express from "express";
-import { exec } from "child_process";
-import path from "path";
+import bodyParser from "body-parser";
 import fs from "fs/promises";
-import { EventEmitter } from "events";
+import path from "path";
+import sharp from "sharp";
 
-EventEmitter.defaultMaxListeners = 100;
 const app = express();
-const port = 3000;
-
-app.use(express.json());
+app.use(bodyParser.json({ limit: "50mb" }));
 
 app.post("/optimize", async (req, res) => {
   try {
     const { filename, formats = [], options = {}, outputDir } = req.body;
 
     if (!filename || !formats.length || !outputDir) {
-      return res.status(400).json({ error: "filename, formats and outputDir are required" });
+      return res.status(400).json({
+        error: "filename, formats, and outputDir are required"
+      });
     }
+
+    // Ensure the output directory exists
     await fs.mkdir(outputDir, { recursive: true });
 
+    // Respond immediately to avoid blocking the request
     res.json({ accepted: true });
 
+    // Background image optimization
+    setImmediate(async () => {
+      try {
+        const inputBuffer = await fs.readFile(filename);
 
-    setImmediate(() => {
-      let cliOptions = "";
-      if (formats.includes("webp")) {
-        const quality = options.webp?.quality ?? 75;
-        cliOptions += ` --webp '{"quality":${quality}}'`;
+        // Process all formats in parallel
+        const tasks = formats.map(async (format) => {
+          let pipeline = sharp(inputBuffer);
+          const ext = format === "mozjpeg" ? "jpg" : format;
+          const outputFile = path.join(
+            outputDir,
+            path.basename(filename).replace(/\..+$/, `.${ext}`)
+          );
+
+          // Apply format-specific options
+          if (format === "webp") {
+            pipeline = pipeline.webp({ quality: options.webp?.quality ?? 75 });
+          } else if (format === "mozjpeg") {
+            pipeline = pipeline.jpeg({ quality: options.mozjpeg?.quality ?? 75 });
+          } else if (format === "oxipng") {
+            pipeline = pipeline.png({ compressionLevel: options.oxipng?.level ?? 1 });
+          } else if (format === "avif") {
+            pipeline = pipeline.avif({ quality: options.avif?.quality ?? 50 });
+          }
+
+          // Write optimized image
+          await pipeline.toFile(outputFile);
+          console.log(`Image optimization completed: ${outputFile}`);
+        });
+
+        await Promise.all(tasks);
+
+      } catch (err) {
+        console.error("Sharp async processing error:", err);
       }
-
-      if (formats.includes("mozjpeg")) {
-        const quality = options.mozjpeg?.quality ?? 75;
-        cliOptions += ` --mozjpeg '{"quality":${quality}}'`;
-      }
-
-      if (formats.includes("oxipng")) {
-        const level = options.oxipng?.level ?? 1;
-        cliOptions += ` --oxipng '{"level":${level}}'`;
-      }
-
-      const command = `
-        node --no-experimental-fetch=false \
-/home/www-data/node_modules/@squoosh/cli/src/index.js \
-${cliOptions} \
--d ${outputDir} \
-${filename}
-      `;
-
-      console.log("Commande Squoosh:", command);
-      exec(command, (err, stdout, stderr) => {
-        if (err) {
-          console.error("Erreur Squoosh async:", stderr);
-          return;
-        }
-        console.log("Compression terminée:", filename);
-      });
-
-
     });
+
   } catch (err) {
-    console.error("Erreur serveur:", err);
-    res.status(500).json({ error: "Server error" });
+    console.error("Server error:", err);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: "Server error" });
+    }
   }
 });
 
-app.listen(port, () => {
-  console.log(`Squoosh CLI service running on port ${port}`);
+app.listen(3000, () => {
+  console.log("Sharp image-optimizer running on port 3000");
 });

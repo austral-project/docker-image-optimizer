@@ -3,8 +3,8 @@ FROM australproject/alpine:3.23
 LABEL maintainer="Matthieu Beurel <matthieu@austral.dev>"
 
 RUN apk add --no-cache \
-    nodejs=20.15.1-r0 --repository=https://dl-cdn.alpinelinux.org/alpine/v3.20/main \
-    npm=10.9.1-r0 --repository=https://dl-cdn.alpinelinux.org/alpine/v3.21/community
+    nodejs \
+    npm 
 
 RUN export NODE_OPTIONS=--openssl-legacy-provider
 WORKDIR /home/www-data
