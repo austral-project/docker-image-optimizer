@@ -9,7 +9,7 @@ app.use(bodyParser.json({ limit: "50mb" }));
 
 app.post("/optimize", async (req, res) => {
   try {
-    const { filename, formats = [], options = {}, outputDir } = req.body;
+    const { filename, formats = [], options = {}, outputDir, wait = false } = req.body;
 
     if (!filename || !formats.length || !outputDir) {
       return res.status(400).json({
@@ -20,41 +20,53 @@ app.post("/optimize", async (req, res) => {
     // Ensure the output directory exists
     await fs.mkdir(outputDir, { recursive: true });
 
+    // 🔥 Shared processing logic
+    const processImage = async () => {
+      const inputBuffer = await fs.readFile(filename);
+
+      const tasks = formats.map(async (format) => {
+        let pipeline = sharp(inputBuffer);
+        const ext = format === "mozjpeg" ? "jpg" : format;
+        const outputFile = path.join(
+          outputDir,
+          path.basename(filename).replace(/\..+$/, `.${ext}`)
+        );
+
+        // Apply format-specific options
+        if (format === "webp") {
+          pipeline = pipeline.webp({ quality: options.webp?.quality ?? 75 });
+        } else if (format === "mozjpeg") {
+          pipeline = pipeline.jpeg({ quality: options.mozjpeg?.quality ?? 75 });
+        } else if (format === "oxipng") {
+          pipeline = pipeline.png({ compressionLevel: options.oxipng?.level ?? 1 });
+        } else if (format === "avif") {
+          pipeline = pipeline.avif({ quality: options.avif?.quality ?? 50 });
+        }
+        await pipeline.toFile(outputFile);
+        console.log(`Image optimization completed: ${outputFile}`);
+        return {
+          format,
+          file: outputFile
+        };
+      });
+      return Promise.all(tasks);
+    };
+
+    if (wait) {
+      const results = await processImage();
+      return res.json({
+        success: true,
+        results
+      });
+    }
+
     // Respond immediately to avoid blocking the request
     res.json({ accepted: true });
 
     // Background image optimization
     setImmediate(async () => {
       try {
-        const inputBuffer = await fs.readFile(filename);
-
-        // Process all formats in parallel
-        const tasks = formats.map(async (format) => {
-          let pipeline = sharp(inputBuffer);
-          const ext = format === "mozjpeg" ? "jpg" : format;
-          const outputFile = path.join(
-            outputDir,
-            path.basename(filename).replace(/\..+$/, `.${ext}`)
-          );
-
-          // Apply format-specific options
-          if (format === "webp") {
-            pipeline = pipeline.webp({ quality: options.webp?.quality ?? 75 });
-          } else if (format === "mozjpeg") {
-            pipeline = pipeline.jpeg({ quality: options.mozjpeg?.quality ?? 75 });
-          } else if (format === "oxipng") {
-            pipeline = pipeline.png({ compressionLevel: options.oxipng?.level ?? 1 });
-          } else if (format === "avif") {
-            pipeline = pipeline.avif({ quality: options.avif?.quality ?? 50 });
-          }
-
-          // Write optimized image
-          await pipeline.toFile(outputFile);
-          console.log(`Image optimization completed: ${outputFile}`);
-        });
-
-        await Promise.all(tasks);
-
+        await processImage();
       } catch (err) {
         console.error("Sharp async processing error:", err);
       }
